@@ -75,6 +75,15 @@ function setConnStatus(online) {
 window.addEventListener('online', () => setConnStatus(true));
 window.addEventListener('offline', () => setConnStatus(false));
 
+/* Реальная проверка связи с Firestore (а не просто интернет в браузере) */
+function initConnectionWatcher() {
+  db.collection('entries').limit(1).onSnapshot(
+    { includeMetadataChanges: true },
+    (snap) => setConnStatus(!snap.metadata.fromCache),
+    () => setConnStatus(false)
+  );
+}
+
 /* ---------- РОУТИНГ ---------- */
 function setRoute(route, subtab) {
   state.route = route;
@@ -705,4 +714,5 @@ if ('serviceWorker' in navigator) {
    ========================================================= */
 renderTopbarDate();
 setConnStatus(navigator.onLine);
+initConnectionWatcher();
 setRoute('raskroy');
