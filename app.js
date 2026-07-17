@@ -659,11 +659,11 @@ function renderReportResults(rows) {
     </div>
     <div class="chart-box">
       <h3>Расходы по категориям, сом</h3>
-      <canvas id="catChart" height="200"></canvas>
+      <div class="chart-canvas-wrap"><canvas id="catChart"></canvas></div>
     </div>
     <div class="chart-box">
       <h3>Динамика прихода по дням</h3>
-      <canvas id="trendChart" height="200"></canvas>
+      <div class="chart-canvas-wrap"><canvas id="trendChart"></canvas></div>
     </div>
     <div class="cat-breakdown">
       <table>
