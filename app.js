@@ -716,9 +716,13 @@ function baseChartOptions(yLabel) {
     },
   };
 }
+function chartLibMissing(canvas) {
+  canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'chart-empty', textContent: 'Не удалось загрузить библиотеку графиков. Проверь интернет-соединение и обнови страницу.' }));
+}
 function buildCategoryChart(byCat) {
   const canvas = $('#catChart');
-  if (!canvas || typeof Chart === 'undefined') return;
+  if (!canvas) return;
+  if (typeof Chart === 'undefined') { chartLibMissing(canvas); return; }
   destroyChart('cat');
   state.charts = state.charts || {};
   const labels = Object.values(CATEGORIES).map(v => v.label);
@@ -733,7 +737,8 @@ function buildCategoryChart(byCat) {
 }
 function buildTrendChart(rows) {
   const canvas = $('#trendChart');
-  if (!canvas || typeof Chart === 'undefined') return;
+  if (!canvas) return;
+  if (typeof Chart === 'undefined') { chartLibMissing(canvas); return; }
   destroyChart('trend');
   state.charts = state.charts || {};
   if (!rows.length) { canvas.replaceWith(Object.assign(document.createElement('p'), { className: 'chart-empty', textContent: 'Нет данных за период' })); return; }
