@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Зав. Склад</title>
+<meta name="description" content="Учёт прихода товаров цеха: ткань, фурнитура, расходники.">
+<meta name="theme-color" content="#232B2F">
+
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Зав.Склад">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== Header ===== -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <span class="topbar__stamp">ЗС</span>
+      <div class="topbar__titles">
+        <h1>Зав. Склад</h1>
+        <p id="todayDate" class="topbar__date">—</p>
+      </div>
+    </div>
+    <div class="topbar__status">
+      <span id="connDot" class="conn-dot" title="Подключение к базе"></span>
+      <span id="connLabel" class="conn-label">подключение…</span>
+    </div>
+  </header>
+
+  <!-- ===== Main content ===== -->
+  <main id="mainView" class="main"></main>
+
+  <!-- ===== Bottom nav ===== -->
+  <nav class="navbar" id="navbar">
+    <button class="navbar__item" data-route="raskroy">
+      <span class="navbar__icon">✂️</span><span>Закройный</span>
+    </button>
+    <button class="navbar__item" data-route="shveiny">
+      <span class="navbar__icon">🧵</span><span>Швейный</span>
+    </button>
+    <button class="navbar__item" data-route="utug">
+      <span class="navbar__icon">🔥</span><span>Утюг</span>
+    </button>
+    <button class="navbar__item" data-route="petlya">
+      <span class="navbar__icon">🔘</span><span>Петля</span>
+    </button>
+    <button class="navbar__item" data-route="otk">
+      <span class="navbar__icon">📦</span><span>ОТК</span>
+    </button>
+    <button class="navbar__item" data-route="reports">
+      <span class="navbar__icon">📊</span><span>Отчёты</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ===== Entry form dialog ===== -->
+<dialog id="entryDialog" class="sheet">
+  <form method="dialog" id="entryForm" class="sheet__form">
+    <div class="sheet__header">
+      <h2 id="entryDialogTitle">Приход</h2>
+      <button type="button" class="icon-btn" id="closeEntryDialog" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="sheet__body" id="entryFormBody"><!-- rendered by JS --></div>
+    <div class="sheet__footer">
+      <button type="button" class="btn btn--ghost" id="cancelEntryBtn">Отмена</button>
+      <button type="submit" class="btn btn--primary" id="saveEntryBtn">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Confirm dialog ===== -->
+<dialog id="confirmDialog" class="sheet sheet--small">
+  <div class="sheet__form">
+    <div class="sheet__header">
+      <h2>Удалить запись?</h2>
+    </div>
+    <div class="sheet__body">
+      <p id="confirmText">Это действие нельзя отменить.</p>
+    </div>
+    <div class="sheet__footer">
+      <button type="button" class="btn btn--ghost" id="confirmCancelBtn">Отмена</button>
+      <button type="button" class="btn btn--danger" id="confirmOkBtn">Удалить</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== Toast ===== -->
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<!-- ===== Firebase (compat SDK, no build step) ===== -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
+
+<!-- ===== Excel export ===== -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- ===== Графики в отчётах ===== -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
