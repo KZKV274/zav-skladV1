@@ -303,6 +303,7 @@ button{ font-family: inherit; }
   letter-spacing:.03em; margin-bottom:10px; font-family: var(--font-body);
 }
 .chart-box canvas{ max-width:100%; }
+.chart-canvas-wrap{ position:relative; height:220px; width:100%; }
 .chart-empty{ text-align:center; padding:20px; color: var(--ink-soft); font-size:13px; }
 
 .cat-breakdown table{ width:100%; border-collapse:collapse; background: var(--paper-hi); border-radius: var(--radius); overflow:hidden; border:1px solid var(--line); }
