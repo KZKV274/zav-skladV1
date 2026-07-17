@@ -19,6 +19,7 @@ const state = {
   route: 'raskroy',
   subtab: 'fabric',        // для raskroy: fabric | regular
   entries: {},              // { category: [entries...] } — живой кэш из onSnapshot
+  entriesError: {},          // { category: "текст ошибки" | null }
   items: {},                 // { "category:subtype": [ {id,name,unit} ] }
   unsub: {},                 // активные подписки Firestore по категориям
   editingEntryId: null,
@@ -108,6 +109,7 @@ function ensureEntriesSubscription(category) {
     .orderBy('date', 'desc')
     .onSnapshot((snap) => {
       setConnStatus(true);
+      state.entriesError[category] = null;
       const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       // досортировка: внутри одного дня — сначала последние добавленные
       rows.sort((a, b) => {
@@ -121,6 +123,8 @@ function ensureEntriesSubscription(category) {
     }, (err) => {
       console.error(err);
       setConnStatus(false);
+      state.entriesError[category] = err.message || String(err);
+      if (state.route === category) renderMain();
       toast('Ошибка соединения с базой');
     });
 }
@@ -217,6 +221,17 @@ function renderCategoryPage(view, category) {
   $('#addEntryBtn').addEventListener('click', () => openEntryForm(category, subtype, null));
 
   const list = $('#entriesList');
+  const errMsg = state.entriesError[category];
+  if (errMsg) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state__icon">⚠️</div>
+        <p><b>Не удалось загрузить записи</b></p>
+        <p style="font-family:var(--font-mono);font-size:11.5px;word-break:break-word;margin-top:8px;">${escapeHtml(errMsg)}</p>
+        <p style="margin-top:8px;">Если в тексте есть слово «index» — открой ссылку из этой ошибки в консоли браузера (F12), она создаст нужный индекс в Firestore за один клик.</p>
+      </div>`;
+    return;
+  }
   if (!entries.length) {
     list.innerHTML = `
       <div class="empty-state">
@@ -776,33 +791,154 @@ function buildTrendChart(rows) {
   });
 }
 
-function exportToExcel() {
+async function exportToExcel() {
   const rows = state.reportRows || [];
   if (!rows.length) { toast('Нет данных для выгрузки'); return; }
+  if (typeof ExcelJS === 'undefined') { toast('Не удалось загрузить библиотеку Excel. Проверь интернет и обнови страницу.'); return; }
 
-  const data = rows.map(r => ({
-    'Партия': r.partyNumber,
-    'Категория': CATEGORIES[r.category]?.label || r.category,
-    'Тип': r.subtype === 'fabric' ? 'Ткань' : 'Товар',
-    'Дата': fmtDate(r.date),
-    'Название': r.subtype === 'fabric' ? r.fabricName : r.itemName,
-    'Цвет': r.subtype === 'fabric' ? (r.color || '') : '',
-    'Кол-во рулонов': r.subtype === 'fabric' ? (r.rolls?.length || 0) : '',
-    'Ярдов всего': r.subtype === 'fabric' ? r.totalYards : '',
-    'Кол-во': r.subtype === 'regular' ? r.quantity : '',
-    'Ед.изм.': r.subtype === 'regular' ? r.unit : '',
-    'Цена за ед.': r.subtype === 'fabric' ? r.pricePerYard : r.pricePerUnit,
-    'Валюта': r.subtype === 'fabric' ? 'USD' : 'сом',
-    'Сумма': r.totalSum,
-  }));
+  const btn = $('#exportExcelBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Формирование файла…'; }
 
-  const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = Object.keys(data[0]).map(k => ({ wch: Math.max(12, k.length + 2) }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Приход');
-  const { from, to } = state.reportRange;
-  XLSX.writeFile(wb, `Зав-Склад_${from}_${to}.xlsx`);
-  toast('Файл Excel скачан');
+  try {
+    const { from, to } = state.reportRange;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Зав. Склад';
+    wb.created = new Date();
+
+    const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF232B2F' } };
+    const HEADER_FONT = { color: { argb: 'FFF5F3E9' }, bold: true, size: 11, name: 'Calibri' };
+    const ZEBRA_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1EFE6' } };
+    const TOTAL_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4EAF2' } };
+    const BORDER = { style: 'thin', color: { argb: 'FFD8D2C4' } };
+    const ALL_BORDERS = { top: BORDER, left: BORDER, bottom: BORDER, right: BORDER };
+
+    /* ============ Лист 1: Приход ============ */
+    const ws = wb.addWorksheet('Приход', { views: [{ state: 'frozen', ySplit: 4 }] });
+
+    ws.mergeCells('A1:N1');
+    ws.getCell('A1').value = 'Зав. Склад — журнал прихода товаров';
+    ws.getCell('A1').font = { bold: true, size: 14, name: 'Calibri', color: { argb: 'FF232B2F' } };
+
+    ws.mergeCells('A2:N2');
+    ws.getCell('A2').value = `Период: ${fmtDate(from)} — ${fmtDate(to)}   ·   Сформировано: ${new Date().toLocaleString('ru-RU')}   ·   Записей: ${rows.length}`;
+    ws.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF5B5C52' } };
+
+    const headers = ['№', 'Партия', 'Категория', 'Тип', 'Дата', 'Название', 'Цвет', 'Рулонов', 'Ярдов всего', 'Кол-во', 'Ед.изм.', 'Цена за ед.', 'Валюта', 'Сумма'];
+    const headerRow = ws.getRow(4);
+    headerRow.values = headers;
+    headerRow.height = 26;
+    headerRow.eachCell((cell) => {
+      cell.fill = HEADER_FILL;
+      cell.font = HEADER_FONT;
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = ALL_BORDERS;
+    });
+
+    rows.forEach((r, i) => {
+      const isFabric = r.subtype === 'fabric';
+      const row = ws.getRow(5 + i);
+      row.values = [
+        i + 1,
+        r.partyNumber,
+        CATEGORIES[r.category]?.label || r.category,
+        isFabric ? 'Ткань' : 'Товар',
+        new Date(r.date + 'T00:00:00'),
+        isFabric ? r.fabricName : r.itemName,
+        isFabric ? (r.color || '') : '',
+        isFabric ? (r.rolls?.length || '') : '',
+        isFabric ? r.totalYards : '',
+        !isFabric ? r.quantity : '',
+        !isFabric ? r.unit : '',
+        isFabric ? r.pricePerYard : r.pricePerUnit,
+        isFabric ? 'USD' : 'сом',
+        r.totalSum,
+      ];
+      row.getCell(5).numFmt = 'dd.mm.yyyy';
+      row.getCell(9).numFmt = '0.0';
+      row.getCell(10).numFmt = '0.00';
+      row.getCell(12).numFmt = isFabric ? '"$"0.00' : '0.00';
+      row.getCell(14).numFmt = isFabric ? '"$"#,##0.00' : '#,##0.00" сом"';
+      row.alignment = { vertical: 'middle' };
+      row.eachCell((cell) => { cell.border = ALL_BORDERS; });
+      if (i % 2 === 1) row.eachCell((cell) => { cell.fill = ZEBRA_FILL; });
+    });
+
+    ws.columns = [
+      { width: 5 }, { width: 12 }, { width: 18 }, { width: 9 }, { width: 12 },
+      { width: 20 }, { width: 14 }, { width: 9 }, { width: 12 }, { width: 10 },
+      { width: 10 }, { width: 13 }, { width: 9 }, { width: 13 },
+    ];
+    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: headers.length } };
+
+    /* ============ Лист 2: Итоги ============ */
+    const byCat = {};
+    Object.keys(CATEGORIES).forEach(k => byCat[k] = { usd: 0, som: 0, count: 0 });
+    let usdTotal = 0, somTotal = 0;
+    rows.forEach(r => {
+      byCat[r.category].count++;
+      if (r.subtype === 'fabric') { usdTotal += r.totalSum || 0; byCat[r.category].usd += r.totalSum || 0; }
+      else { somTotal += r.totalSum || 0; byCat[r.category].som += r.totalSum || 0; }
+    });
+
+    const ws2 = wb.addWorksheet('Итоги');
+    ws2.mergeCells('A1:D1');
+    ws2.getCell('A1').value = 'Свод по категориям';
+    ws2.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF232B2F' } };
+    ws2.mergeCells('A2:D2');
+    ws2.getCell('A2').value = `Период: ${fmtDate(from)} — ${fmtDate(to)}`;
+    ws2.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF5B5C52' } };
+
+    const headers2 = ['Категория', 'Записей', 'Сумма, $', 'Сумма, сом'];
+    const hRow2 = ws2.getRow(4);
+    hRow2.values = headers2;
+    hRow2.height = 24;
+    hRow2.eachCell((cell) => {
+      cell.fill = HEADER_FILL; cell.font = HEADER_FONT;
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = ALL_BORDERS;
+    });
+
+    Object.entries(CATEGORIES).forEach(([k, v], i) => {
+      const row = ws2.getRow(5 + i);
+      row.values = [v.label, byCat[k].count, byCat[k].usd || 0, byCat[k].som || 0];
+      row.getCell(3).numFmt = '"$"#,##0.00';
+      row.getCell(4).numFmt = '#,##0.00" сом"';
+      row.eachCell((cell) => { cell.border = ALL_BORDERS; });
+      if (i % 2 === 1) row.eachCell((cell) => { cell.fill = ZEBRA_FILL; });
+    });
+
+    const totalRow = ws2.getRow(5 + Object.keys(CATEGORIES).length);
+    totalRow.values = ['ИТОГО', rows.length, usdTotal, somTotal];
+    totalRow.getCell(3).numFmt = '"$"#,##0.00';
+    totalRow.getCell(4).numFmt = '#,##0.00" сом"';
+    totalRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FF232B2F' } };
+      cell.border = ALL_BORDERS;
+      cell.fill = TOTAL_FILL;
+    });
+
+    ws2.columns = [{ width: 24 }, { width: 12 }, { width: 14 }, { width: 16 }];
+    ws2.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: headers2.length } };
+
+    /* ============ Скачивание ============ */
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Зав-Склад_${from}_${to}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('Файл Excel скачан');
+  } catch (e) {
+    console.error(e);
+    toast('Не удалось создать файл Excel');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ Скачать в Excel'; }
+  }
 }
 
 /* =========================================================
