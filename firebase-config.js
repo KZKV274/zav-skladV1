@@ -10,12 +10,12 @@
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "ВСТАВЬ_СЮДА",
-  authDomain: "ВСТАВЬ_СЮДА.firebaseapp.com",
-  projectId: "ВСТАВЬ_СЮДА",
-  storageBucket: "ВСТАВЬ_СЮДА.appspot.com",
-  messagingSenderId: "ВСТАВЬ_СЮДА",
-  appId: "ВСТАВЬ_СЮДА"
+  apiKey: "AIzaSyAFs2HyfKEfwxqbxOYRhd1gDdOoCXsYpyo",
+  authDomain: "zav-sklad.firebaseapp.com",
+  projectId: "zav-sklad",
+  storageBucket: "zav-sklad.firebasestorage.app",
+  messagingSenderId: "484651242362",
+  appId: "1:484651242362:web:181fc8ea6ea0ad9bbefcc3"
 };
 
 firebase.initializeApp(firebaseConfig);
