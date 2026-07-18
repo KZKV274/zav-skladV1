@@ -2,7 +2,7 @@
 // на телефон (PWA). Данные всегда идут напрямую в Firebase (сеть нужна),
 // кешируется только "каркас" приложения — HTML/CSS/JS/иконки.
 
-const CACHE_NAME = 'zavsklad-shell-v8';
+const CACHE_NAME = 'zavsklad-shell-v9';
 const SHELL_FILES = [
   './',
   './index.html',
