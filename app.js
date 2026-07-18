@@ -11,7 +11,7 @@ const CATEGORIES = {
   petlya:  { label: 'Петля и пуговица', code: 'ПП',  hasFabric: false },
   otk:     { label: 'ОТК и упаковка',   code: 'ОТК', hasFabric: false },
 };
-const ROUTES = ['raskroy', 'shveiny', 'utug', 'petlya', 'otk', 'reports'];
+const ROUTES = ['raskroy', 'shveiny', 'utug', 'petlya', 'otk', 'kassa', 'reports'];
 const UNITS = ['шт', 'кг', 'м', 'упаковка', 'пара', 'рулон', 'литр', 'другое'];
 
 /* ---------- СОСТОЯНИЕ ---------- */
@@ -30,6 +30,9 @@ const state = {
   confirmCallback: null,
   reportRows: [],             // последний результат отчёта (для экспорта в Excel)
   charts: {},                  // активные экземпляры Chart.js в разделе «Отчёты»
+  editingPartyNumber: null,     // номер партии редактируемой записи (для связи с кассой)
+  kassaTx: [],                   // все операции кассы
+  kassaBalance: 0,                 // текущий баланс кассы (сом)
 };
 
 /* ---------- УТИЛИТЫ ---------- */
@@ -171,11 +174,57 @@ async function nextPartyNumber(category) {
 }
 
 /* =========================================================
+   КАССА — подписка и вспомогательные функции
+   ========================================================= */
+function ensureKassaSubscription() {
+  if (state.unsub.kassa) return;
+  state.unsub.kassa = db.collection('kassaTx').onSnapshot((snap) => {
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      const at = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+      const bt = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+      return bt - at;
+    });
+    state.kassaTx = rows;
+    state.kassaBalance = rows.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    updateKassaHeaderBadge();
+    if (state.route === 'kassa') renderMain();
+  }, (err) => console.error(err));
+}
+function updateKassaHeaderBadge() {
+  const el = $('#kassaHeaderBadge');
+  if (!el) return;
+  const bal = state.kassaBalance || 0;
+  const abs = Math.abs(bal).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  el.textContent = bal >= 0 ? `💰 Касса: ${abs} сом` : `⚠️ Касса должна: ${abs} сом`;
+  el.classList.toggle('debt', bal < 0);
+}
+/* Создаёт/обновляет операцию кассы, привязанную к записи прихода (subtype=regular).
+   Ткань (subtype=fabric) кассу не трогает — она отдельно, в долларах. */
+async function syncKassaForEntry(entryId, subtype, payload, category, partyNumber, isNew) {
+  if (subtype !== 'regular') return;
+  const data = {
+    type: 'purchase',
+    amount: -(payload.totalSum || 0),
+    date: payload.date,
+    category,
+    partyNumber,
+    itemName: payload.itemName,
+  };
+  if (isNew) data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+  try {
+    await db.collection('kassaTx').doc(entryId).set(data, { merge: true });
+  } catch (e) { console.error(e); }
+}
+
+/* =========================================================
    ОТРИСОВКА — главный роутер вида
    ========================================================= */
 function renderMain() {
   const view = $('#mainView');
   if (state.route === 'reports') { renderReportsPage(view); return; }
+  if (state.route === 'kassa') { renderKassaPage(view); return; }
   renderCategoryPage(view, state.route);
 }
 
@@ -246,7 +295,7 @@ function renderCategoryPage(view, category) {
     openEntryForm(category, subtype, entry);
   }));
   $$('.ticket [data-del]', list).forEach(btn => btn.addEventListener('click', () => {
-    confirmDelete(btn.dataset.del, `Партия ${btn.dataset.party} будет удалена без возможности восстановления.`);
+    confirmDeleteEntry(btn.dataset.del, `Партия ${btn.dataset.party} будет удалена без возможности восстановления.`);
   }));
 }
 
@@ -261,7 +310,6 @@ function renderTicketHTML(e) {
   if (isFabric) {
     metaHtml += `<span>Рулонов: <b>${e.rolls?.length || 0}</b></span>`;
     metaHtml += `<span>Всего ярдов: <b>${e.totalYards}</b></span>`;
-    metaHtml += `<span>Цена/ярд: <b>${fmtMoney(e.pricePerYard, 'USD')}</b></span>`;
   } else {
     metaHtml += `<span>Кол-во: <b>${e.quantity} ${escapeHtml(e.unit)}</b></span>`;
     metaHtml += `<span>Цена/ед: <b>${fmtMoney(e.pricePerUnit, 'SOM')}</b></span>`;
@@ -304,6 +352,7 @@ function openEntryForm(category, subtype, existing) {
   state.editingEntryId = existing ? existing.id : null;
   state.editingCategory = category;
   state.editingSubtype = subtype;
+  state.editingPartyNumber = existing ? existing.partyNumber : null;
   state.photoDraftFile = null;
   state.rollsDraft = existing?.rolls ? existing.rolls.map(r => r.length) : [null];
 
@@ -342,14 +391,11 @@ function fabricFormHTML(e) {
         ${rolls.map((v, i) => rollRowHTML(i, v)).join('')}
       </div>
       <button type="button" class="add-roll-btn" id="addRollBtn">+ Добавить рулон</button>
+      <p class="hint">Всего ярдов: <b id="calcYards">0</b></p>
     </div>
     <div class="field">
-      <label for="f_price">Цена за ярд ($)</label>
-      <input id="f_price" type="number" min="0" step="0.01" placeholder="1.70" value="${e?.pricePerYard ?? ''}" required>
-    </div>
-    <div class="calc-box usd">
-      <span>Всего: <b id="calcYards">0</b> ярд.</span>
-      <span>Сумма: <b id="calcSum">$0.00</b></span>
+      <label for="f_totalSum">Сколько заплатили за всю партию, $</label>
+      <input id="f_totalSum" type="number" min="0" step="0.01" placeholder="Например: 195.00" value="${e?.totalSum ?? ''}" required>
     </div>
     ${photoFieldHTML(e)}
   `;
@@ -453,7 +499,6 @@ function wireFormEvents(subtype) {
     };
     wireRollRemovers();
     wireRollInputs();
-    $('#f_price').oninput = () => recalcTotals('fabric');
   } else {
     $('#f_qty').oninput = () => recalcTotals('regular');
     $('#f_priceUnit').oninput = () => recalcTotals('regular');
@@ -482,9 +527,8 @@ function wireRollRemovers() {
 function recalcTotals(subtype) {
   if (subtype === 'fabric') {
     const yards = state.rollsDraft.reduce((sum, v) => sum + (Number(v) || 0), 0);
-    const price = Number($('#f_price')?.value) || 0;
-    $('#calcYards').textContent = yards.toFixed(1).replace(/\.0$/, '');
-    $('#calcSum').textContent = `$${(yards * price).toFixed(2)}`;
+    const el = $('#calcYards');
+    if (el) el.textContent = yards.toFixed(1).replace(/\.0$/, '');
   } else {
     const qty = Number($('#f_qty')?.value) || 0;
     const price = Number($('#f_priceUnit')?.value) || 0;
@@ -497,11 +541,12 @@ async function uploadPhotoIfAny(category, partyNumber) {
   try {
     const path = `entries/${category}/${partyNumber}_${Date.now()}_${state.photoDraftFile.name}`;
     const ref = storage.ref().child(path);
-    await ref.put(state.photoDraftFile);
-    return await ref.getDownloadURL();
+    const uploadTask = ref.put(state.photoDraftFile).then(() => ref.getDownloadURL());
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000));
+    return await Promise.race([uploadTask, timeout]);
   } catch (e) {
     console.error(e);
-    toast('Не удалось загрузить фото');
+    toast('Фото не загрузилось (запись всё равно сохранена)');
     return null;
   }
 }
@@ -521,13 +566,13 @@ async function saveEntry() {
     if (subtype === 'fabric') {
       const fabricName = $('#f_fabricName').value.trim();
       const color = $('#f_color').value.trim();
-      const pricePerYard = Number($('#f_price').value) || 0;
       const rolls = state.rollsDraft.filter(v => Number(v) > 0).map(v => ({ length: Number(v) }));
+      const totalSum = Number($('#f_totalSum').value) || 0;
       if (!fabricName) throw new Error('Укажи название ткани');
       if (!rolls.length) throw new Error('Добавь хотя бы один рулон');
+      if (totalSum <= 0) throw new Error('Укажи сумму, которую заплатили за партию');
       const totalYards = rolls.reduce((s, r) => s + r.length, 0);
-      const totalSum = Math.round(totalYards * pricePerYard * 100) / 100;
-      Object.assign(payload, { fabricName, color, rolls, pricePerYard, totalYards, totalSum });
+      Object.assign(payload, { fabricName, color, rolls, totalYards, totalSum });
       await addItemIfNew(category, 'fabric', fabricName, null);
     } else {
       const itemName = $('#f_itemName').value.trim();
@@ -545,13 +590,15 @@ async function saveEntry() {
       const photoURL = await uploadPhotoIfAny(category, 'edit');
       if (photoURL) payload.photoURL = photoURL;
       await db.collection('entries').doc(state.editingEntryId).update(payload);
+      await syncKassaForEntry(state.editingEntryId, subtype, payload, category, state.editingPartyNumber, false);
       toast('Запись обновлена');
     } else {
       payload.partyNumber = await nextPartyNumber(category);
       payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
       const photoURL = await uploadPhotoIfAny(category, payload.partyNumber);
       if (photoURL) payload.photoURL = photoURL;
-      await db.collection('entries').add(payload);
+      const ref = await db.collection('entries').add(payload);
+      await syncKassaForEntry(ref.id, subtype, payload, category, payload.partyNumber, true);
       toast(`Добавлено · ${payload.partyNumber}`);
     }
     $('#entryDialog').close();
@@ -564,15 +611,29 @@ async function saveEntry() {
 }
 
 /* ---------- УДАЛЕНИЕ ---------- */
-function confirmDelete(entryId, text) {
+function confirmDeleteEntry(entryId, text) {
   $('#confirmText').textContent = text;
   state.confirmCallback = async () => {
     try {
       await db.collection('entries').doc(entryId).delete();
+      await db.collection('kassaTx').doc(entryId).delete().catch(() => {});
       toast('Запись удалена');
     } catch (e) {
       console.error(e);
       toast('Не удалось удалить запись');
+    }
+  };
+  $('#confirmDialog').showModal();
+}
+function confirmDeleteKassaTx(txId, text) {
+  $('#confirmText').textContent = text;
+  state.confirmCallback = async () => {
+    try {
+      await db.collection('kassaTx').doc(txId).delete();
+      toast('Операция удалена');
+    } catch (e) {
+      console.error(e);
+      toast('Не удалось удалить операцию');
     }
   };
   $('#confirmDialog').showModal();
@@ -583,6 +644,118 @@ $('#confirmOkBtn').addEventListener('click', async () => {
   state.confirmCallback = null;
 });
 $('#confirmCancelBtn').addEventListener('click', () => { $('#confirmDialog').close(); state.confirmCallback = null; });
+
+/* ---------- ПОПОЛНЕНИЕ КАССЫ ---------- */
+$('#closeTopupDialog').addEventListener('click', () => $('#topupDialog').close());
+$('#cancelTopupBtn').addEventListener('click', () => $('#topupDialog').close());
+$('#topupForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const amount = Number($('#topupAmount').value);
+  const date = $('#topupDate').value || todayISO();
+  const note = $('#topupNote').value.trim();
+  if (!amount || amount <= 0) { toast('Укажи сумму пополнения'); return; }
+  const btn = $('#saveTopupBtn');
+  btn.disabled = true;
+  try {
+    await db.collection('kassaTx').add({
+      type: 'topup',
+      amount,
+      date,
+      note: note || null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    $('#topupDialog').close();
+    toast('Касса пополнена');
+  } catch (e) {
+    console.error(e);
+    toast('Не удалось пополнить кассу');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* =========================================================
+   КАССА — страница
+   ========================================================= */
+function renderKassaPage(view) {
+  const bal = state.kassaBalance || 0;
+  const totalIn = state.kassaTx.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totalOut = state.kassaTx.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+
+  view.innerHTML = `
+    <div class="page-head">
+      <div>
+        <h2>Касса</h2>
+        <p class="page-head__sub">${state.kassaTx.length ? state.kassaTx.length + ' операций' : 'операций пока нет'}</p>
+      </div>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-card total ${bal < 0 ? 'debt' : ''}" style="grid-column:1/-1;">
+        <div class="label">${bal >= 0 ? 'На счету' : 'Касса должна'}</div>
+        <div class="value">${Math.abs(bal).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сом</div>
+      </div>
+      <div class="summary-card som"><div class="label">Всего пополнено</div><div class="value">${totalIn.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</div></div>
+      <div class="summary-card"><div class="label">Всего потрачено</div><div class="value">${totalOut.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}</div></div>
+    </div>
+    <div class="fab-row">
+      <button class="btn btn--primary btn--block" id="addTopupBtn">+ Пополнить кассу</button>
+    </div>
+    <div id="kassaList"></div>
+  `;
+
+  $('#addTopupBtn').addEventListener('click', openTopupForm);
+
+  const list = $('#kassaList');
+  if (!state.kassaTx.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state__icon">💰</div>
+        <p>Касса пока пуста.<br>Нажми «Пополнить кассу», чтобы внести первые деньги.</p>
+      </div>`;
+    return;
+  }
+  list.innerHTML = state.kassaTx.map(renderKassaTicketHTML).join('');
+  $$('.ticket [data-deltx]', list).forEach(btn => btn.addEventListener('click', () => {
+    confirmDeleteKassaTx(btn.dataset.deltx, 'Пополнение будет удалено, баланс кассы пересчитается.');
+  }));
+}
+
+function renderKassaTicketHTML(tx) {
+  const isTopup = tx.type === 'topup';
+  const title = isTopup
+    ? 'Пополнение кассы'
+    : `${escapeHtml(CATEGORIES[tx.category]?.label || '')} · ${escapeHtml(tx.itemName || '')}`;
+  const stamp = isTopup ? 'Пополнение' : escapeHtml(tx.partyNumber || '');
+  const amountAbs = Math.abs(tx.amount || 0);
+  const sign = tx.amount >= 0 ? '+' : '−';
+  const sumClass = tx.amount >= 0 ? 'som' : 'debt';
+  const delBtn = isTopup ? `<button data-deltx="${tx.id}" title="Удалить">🗑️</button>` : '';
+  const noteHtml = isTopup && tx.note ? `<div class="ticket__color">${escapeHtml(tx.note)}</div>` : '';
+
+  return `
+    <div class="ticket">
+      <div class="ticket__row">
+        <div>
+          <div class="ticket__title">${title}</div>
+          ${noteHtml}
+        </div>
+        <div class="ticket__stamp">${stamp}</div>
+      </div>
+      <div class="ticket__dash"></div>
+      <div class="ticket__meta"><span>📅 <b>${fmtDate(tx.date)}</b></span></div>
+      <div class="ticket__sum">
+        <span class="sum-value ${sumClass}">${sign}${amountAbs.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} сом</span>
+        <span class="ticket__actions">${delBtn}</span>
+      </div>
+    </div>`;
+}
+
+function openTopupForm() {
+  $('#topupAmount').value = '';
+  $('#topupDate').value = todayISO();
+  $('#topupNote').value = '';
+  $('#topupDialog').showModal();
+}
 
 /* =========================================================
    ОТЧЁТЫ
@@ -847,14 +1020,14 @@ async function exportToExcel() {
         isFabric ? r.totalYards : '',
         !isFabric ? r.quantity : '',
         !isFabric ? r.unit : '',
-        isFabric ? r.pricePerYard : r.pricePerUnit,
+        isFabric ? '' : r.pricePerUnit,
         isFabric ? 'USD' : 'сом',
         r.totalSum,
       ];
       row.getCell(5).numFmt = 'dd.mm.yyyy';
       row.getCell(9).numFmt = '0.0';
       row.getCell(10).numFmt = '0.00';
-      row.getCell(12).numFmt = isFabric ? '"$"0.00' : '0.00';
+      if (!isFabric) row.getCell(12).numFmt = '0.00';
       row.getCell(14).numFmt = isFabric ? '"$"#,##0.00' : '#,##0.00" сом"';
       row.alignment = { vertical: 'middle' };
       row.eachCell((cell) => { cell.border = ALL_BORDERS; });
@@ -953,4 +1126,5 @@ if ('serviceWorker' in navigator) {
 renderTopbarDate();
 setConnStatus(navigator.onLine);
 initConnectionWatcher();
+ensureKassaSubscription();
 setRoute('raskroy');
