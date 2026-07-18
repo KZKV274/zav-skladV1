@@ -31,6 +31,7 @@
       <div class="topbar__titles">
         <h1>Зав. Склад</h1>
         <p id="todayDate" class="topbar__date">—</p>
+        <p id="kassaHeaderBadge" class="topbar__balance">—</p>
       </div>
     </div>
     <div class="topbar__status">
@@ -59,6 +60,9 @@
     <button class="navbar__item" data-route="otk">
       <span class="navbar__icon">📦</span><span>ОТК</span>
     </button>
+    <button class="navbar__item" data-route="kassa">
+      <span class="navbar__icon">💰</span><span>Касса</span>
+    </button>
     <button class="navbar__item" data-route="reports">
       <span class="navbar__icon">📊</span><span>Отчёты</span>
     </button>
@@ -76,6 +80,34 @@
     <div class="sheet__footer">
       <button type="button" class="btn btn--ghost" id="cancelEntryBtn">Отмена</button>
       <button type="submit" class="btn btn--primary" id="saveEntryBtn">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== Диалог пополнения кассы ===== -->
+<dialog id="topupDialog" class="sheet sheet--small">
+  <form method="dialog" id="topupForm" class="sheet__form">
+    <div class="sheet__header">
+      <h2>Пополнение кассы</h2>
+      <button type="button" class="icon-btn" id="closeTopupDialog" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="sheet__body">
+      <div class="field">
+        <label for="topupAmount">Сумма, сом</label>
+        <input id="topupAmount" type="number" min="0" step="0.01" placeholder="Например: 20000" required>
+      </div>
+      <div class="field">
+        <label for="topupDate">Дата</label>
+        <input id="topupDate" type="date" required>
+      </div>
+      <div class="field">
+        <label for="topupNote">Заметка (необязательно)</label>
+        <input id="topupNote" type="text" placeholder="Например: от руководителя">
+      </div>
+    </div>
+    <div class="sheet__footer">
+      <button type="button" class="btn btn--ghost" id="cancelTopupBtn">Отмена</button>
+      <button type="submit" class="btn btn--primary" id="saveTopupBtn">Пополнить</button>
     </div>
   </form>
 </dialog>
