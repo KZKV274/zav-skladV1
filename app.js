@@ -695,12 +695,9 @@ function renderReportResults(rows) {
       </table>
     </div>
     <button class="btn btn--primary btn--block" id="exportExcelBtn">⬇ Скачать в Excel</button>
-    <div style="height:14px"></div>
-    <div id="reportList"></div>
   `;
   results.innerHTML = html;
   $('#exportExcelBtn').addEventListener('click', exportToExcel);
-  $('#reportList').innerHTML = rows.map(renderTicketHTML).join('');
   buildCategoryChart(byCat);
   buildTrendChart(rows);
 }
