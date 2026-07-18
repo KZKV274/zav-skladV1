@@ -74,6 +74,8 @@ button{ font-family: inherit; }
 }
 .topbar__titles h1{ font-size:19px; color:#F5F3E9; }
 .topbar__date{ margin:1px 0 0; font-size:12px; color:#B9BCAE; text-transform:capitalize; }
+.topbar__balance{ margin:3px 0 0; font-size:12.5px; font-weight:700; color:#8FBF7A; }
+.topbar__balance.debt{ color:#E29A8A; }
 .topbar__status{ display:flex; align-items:center; gap:6px; font-size:11px; color:#B9BCAE; }
 .conn-dot{ width:8px; height:8px; border-radius:50%; background:#C6821F; display:inline-block; transition: background .2s; }
 .conn-dot.online{ background:#6FA05A; box-shadow:0 0 0 3px rgba(111,160,90,.25); }
@@ -91,12 +93,13 @@ button{ font-family: inherit; }
   flex:1;
   background:none; border:none; cursor:pointer;
   display:flex; flex-direction:column; align-items:center; gap:2px;
-  padding:9px 2px 8px;
+  padding:8px 1px 7px;
   color:#9CA0A0;
-  font-size:10.5px;
+  font-size:9.5px;
   border-top: 2px solid transparent;
+  white-space:nowrap;
 }
-.navbar__icon{ font-size:18px; line-height:1; }
+.navbar__icon{ font-size:16px; line-height:1; }
 .navbar__item.active{ color:#F5F3E9; border-top-color: var(--amber); }
 
 /* ===================== MAIN ===================== */
@@ -184,6 +187,7 @@ button{ font-family: inherit; }
 .sum-value{ font-family: var(--font-mono); font-weight:600; font-size:16px; }
 .sum-value.usd{ color: var(--thread); }
 .sum-value.som{ color: var(--moss); }
+.sum-value.debt{ color: var(--danger); }
 .ticket__actions{ display:flex; gap:8px; }
 .ticket__actions button{
   background:none; border:none; cursor:pointer; font-size:15px; color: var(--ink-soft);
@@ -291,6 +295,9 @@ button{ font-family: inherit; }
 .summary-card.total{ grid-column: 1 / -1; background: var(--graphite); border-color: var(--graphite); }
 .summary-card.total .label{ color:#B9BCAE; }
 .summary-card.total .value{ color:#F5F3E9; }
+.summary-card.total.debt{ background: var(--danger); border-color: var(--danger); }
+.summary-card.total.debt .label{ color:#F3E1DD; }
+.summary-card.total.debt .value{ color:#FBEDEA; }
 
 .cat-breakdown{ margin-bottom:16px; }
 
